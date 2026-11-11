@@ -1,0 +1,4 @@
+source_directory: data/raw
+output_directory: data/output
+output_filename: scan_results.csv
+large_file_threshold_mb: 100
