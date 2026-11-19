@@ -226,3 +226,6 @@ $RECYCLE.BIN/
 
 .vscode/launch.json
 .vscode/settings.json
+
+
+/conda_envs/*
