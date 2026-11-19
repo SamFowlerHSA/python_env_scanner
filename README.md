@@ -1,14 +1,12 @@
 # Environment Version Compliance Check
 
-This repository contains a report-only scanner for Python environments. The script
-in the repo root, `env_inventory.py`, looks for installed conda, uv, virtualenv,
+This repository contains a report-only scanner for Python environments. The
+`env_scanner` package (in `src/`) looks for installed conda, uv, virtualenv,
 system, and WSL Python interpreters, probes each one, compares the detected
 package versions against minimum thresholds, and writes a CSV plus a ready-to-paste
 email summary.
 
-The repo is intentionally simple: there is one Python script and a generated
-`data/reports` directory. It never installs or upgrades anything; it only inspects
-and writes reports.
+It never installs or upgrades anything; it only inspects and writes reports.
 
 ## What the repo does
 
@@ -29,8 +27,15 @@ change `pip`, `certifi`, `uv`, or `conda` for you.
 
 ```text
 python_env_scanner/
-├── env_inventory.py        # main scanner
-├── READ_ME.md              # project documentation
+├── src/env_scanner/
+│   ├── inventory.py        # discovery, probing, compliance, reports, CLI
+│   ├── aws.py              # optional AWS discovery (needs boto3)
+│   └── __main__.py         # python -m env_scanner
+├── tests/                  # unit and integration tests
+├── docs/
+│   └── AWS_AUTH_GUIDE.md   # AWS authentication and IAM permissions
+├── env_inventory.py        # launcher so the scanner runs without installing
+├── pyproject.toml          # packaging, pytest and ruff config
 ├── data/
 │   └── reports/            # generated CSVs and email bodies
 ├── configs/
@@ -38,16 +43,27 @@ python_env_scanner/
 └── ...
 ```
 
-The important behavior is that the default output directory is `data/reports`, and
-it is created automatically when the script runs.
+The default output directory is `data/reports`, and it is created automatically
+when the script runs.
 
 ## Script usage
 
-Run the scanner from the repo root:
+Run the scanner from the repo root (no install needed):
 
 ```bash
 python env_inventory.py
 ```
+
+Or install it (`pip install -e .`, or `pip install -e ".[aws,dev]"` for AWS and
+test tooling) and use either entry point:
+
+```bash
+env-scanner
+python -m env_scanner
+```
+
+Run the tests with `python -m pytest` (or
+`PYTHONPATH=src python -m unittest discover -s tests -t .`).
 
 On Windows PowerShell the same command is:
 
@@ -266,3 +282,37 @@ in the generated email.
 
 The script is deliberately conservative: unreadable directories are skipped, and it
 fails gracefully rather than crashing the whole scan.
+
+## AWS environment inventory
+
+`--aws` adds an inventory of AWS workloads that run Python: EC2 instances (running),
+Lambda functions, ECS task containers and SageMaker notebooks, training jobs and
+endpoints. Requires `pip install boto3` and AWS credentials; see
+[AWS_AUTH_GUIDE.md](docs/AWS_AUTH_GUIDE.md) for authentication and IAM permissions.
+
+```bash
+python env_inventory.py --aws                                  # us-east-1
+python env_inventory.py --aws --aws-region eu-west-1 --aws-region us-west-2
+python env_inventory.py --aws --no-aws-ec2 --no-aws-ecs        # Lambda + SageMaker only
+python env_inventory.py --aws --no-conda --no-uv --no-venv-scan --no-system --no-wsl  # AWS only
+```
+
+| Flag | Description |
+| --- | --- |
+| `--aws` | Enable AWS scanning |
+| `--aws-region` | Region to scan. Repeatable. Default `us-east-1` |
+| `--aws-access-key`, `--aws-secret-key`, `--aws-session-token` | Explicit credentials. Default: AWS CLI credentials or IAM role |
+| `--no-aws-ec2`, `--no-aws-lambda`, `--no-aws-ecs`, `--no-aws-sagemaker` | Skip a service |
+
+AWS rows appear in the CSV with `source` set to `aws-ec2`, `aws-lambda`, `aws-ecs` or
+`aws-sagemaker`, plus `aws_region`, `aws_instance_id`, `aws_instance_type`,
+`aws_function_name`, `aws_runtime`, `aws_cluster`, `aws_container_name`,
+`aws_container_image` and `aws_notebook_name` columns.
+
+Limitations:
+
+- AWS environments are inventory-only. Their interpreters are not probed, so pip,
+  certifi, uv and conda versions are not checked: `env_verdict` is `not_probed` and
+  the rows are not counted as compliant, action required or probe errors.
+- Only Lambda reports a Python version (from the runtime identifier).
+- A service that fails (for example `AccessDenied`) prints a warning and is skipped.
